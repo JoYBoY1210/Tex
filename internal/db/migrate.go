@@ -1,0 +1,17 @@
+package db
+
+import (
+	"fmt"
+
+	"github.com/joyboy1210/tex/internal/models"
+	"gorm.io/gorm"
+)
+
+func Migrate(db *gorm.DB) error {
+	err := db.AutoMigrate(&models.User{})
+	if err != nil {
+		return err
+	}
+	fmt.Println("Database migrated successfully")
+	return nil
+}
