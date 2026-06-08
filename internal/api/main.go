@@ -10,7 +10,7 @@ import (
 
 func InitServer(ctx context.Context) {
 	mux := http.NewServeMux()
-
+	RegisterRoutes(mux)
 	server := http.Server{
 		Addr:              ":6123",
 		Handler:           mux,
