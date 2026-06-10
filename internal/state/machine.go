@@ -1,9 +1,11 @@
 package state
 
 import (
+	"context"
 	"log"
 	"strings"
 
+	"github.com/joyboy1210/tex/internal/api/twilio"
 	"github.com/joyboy1210/tex/internal/models"
 )
 
@@ -26,9 +28,9 @@ func TransitionState(phone, newState string) error {
 	return nil
 }
 
-func ProcessMessage(phone, message string) {
+func ProcessMessage(ctx context.Context, phone, message string) {
 	cleanInput := strings.TrimSpace(strings.ToLower(message))
-	_ = cleanInput
+	// _ = cleanInput
 	currentState, exists := GetState(phone)
 	if !exists {
 		user, err := models.GetUser(phone)
@@ -48,17 +50,45 @@ func ProcessMessage(phone, message string) {
 
 	switch currentState {
 	case StateStart:
-		handleStart(phone)
+		if cleanInput == "1" {
+			TransitionState(phone, StateBrowsing)
+			handleBrowsing(ctx, phone)
+		} else if cleanInput == "2" {
+			twilio.SendMessage(ctx, phone, "Tracking system nahi banaya lol")
+		} else {
+			handleStart(ctx, phone)
+		}
 	case StateBrowsing:
-		log.Printf("user is browsing")
+		log.Printf("User %s is actively browsing. Input: %s", phone, cleanInput)
+		handleBrowsing(ctx, phone)
 	default:
 		log.Printf("Unhandled state: %s for user %s", currentState, phone)
 		TransitionState(phone, StateStart)
-		handleStart(phone)
+		handleStart(ctx, phone)
 	}
 }
 
-func handleStart(phone string) {
+func handleStart(ctx context.Context, phone string) {
 	log.Printf("Welcome message sent to %s", phone)
 	log.Printf("routing to main menu")
+
+	message := "Welcome to our store! Please choose an option:\n1. Browse Products\n2. Track Order\n3. Help"
+
+	err := twilio.SendMessage(ctx, phone, message)
+	if err != nil {
+		log.Printf("ERROR: failed to send welcome message to %s : %v", phone, err)
+		return
+	}
+	log.Printf("welcome message sent to %s", phone)
+
+}
+
+func handleBrowsing(ctx context.Context, phone string) {
+	message := "Here are our products:\n1. Product A\n2. Product B\n3. Product C\nPlease reply with the product number to view details."
+	err := twilio.SendMessage(ctx, phone, message)
+	if err != nil {
+		log.Printf("ERROR: failed to send browsing message to %s : %v", phone, err)
+		return
+	}
+	log.Printf("browsing message sent to %s", phone)
 }

@@ -7,8 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/joho/godotenv"
 	"github.com/joyboy1210/tex/internal/api"
 	"github.com/joyboy1210/tex/internal/db"
+	"github.com/joyboy1210/tex/internal/models"
 )
 
 func main() {
@@ -16,6 +18,11 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to initialize database:", err)
 	}
+	err = godotenv.Load()
+	if err != nil {
+		log.Fatal("failed to load .env")
+	}
+	models.InitDB(Db)
 	db.Migrate(Db)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -3,6 +3,7 @@ module github.com/joyboy1210/tex
 go 1.26.2
 
 require (
+	github.com/joho/godotenv v1.5.1
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )
