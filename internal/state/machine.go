@@ -5,8 +5,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/joyboy1210/tex/internal/api/twilio"
 	"github.com/joyboy1210/tex/internal/models"
+	"github.com/joyboy1210/tex/internal/twilio"
 )
 
 const (
