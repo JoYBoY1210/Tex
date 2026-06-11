@@ -11,6 +11,7 @@ import (
 	"github.com/joyboy1210/tex/internal/api"
 	"github.com/joyboy1210/tex/internal/db"
 	"github.com/joyboy1210/tex/internal/models"
+	"github.com/joyboy1210/tex/internal/state"
 )
 
 func main() {
@@ -25,6 +26,10 @@ func main() {
 	models.InitDB(Db)
 	db.Migrate(Db)
 	db.SeedDb(Db)
+	err = state.Innitcatalog()
+	if err != nil {
+		log.Fatal("failed to initialize catalog cache:", err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	api.InitServer(ctx)
