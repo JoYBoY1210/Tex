@@ -2,8 +2,11 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/joyboy1210/tex/internal/models"
 	"github.com/joyboy1210/tex/internal/twilio"
@@ -16,6 +19,24 @@ const (
 	StateAwaitingQty    = "AWAITING_QTY"
 	StateCartDecision   = "CART_DECISION"
 )
+
+var (
+	sessionMut   sync.RWMutex
+	userSessions = make(map[string]uint)
+)
+
+func setSessionCategory(phone string, categoryId uint) {
+	sessionMut.Lock()
+	defer sessionMut.Unlock()
+	userSessions[phone] = categoryId
+}
+
+func getSessionCategory(phone string) (uint, bool) {
+	sessionMut.RLock()
+	defer sessionMut.RUnlock()
+	catId, exists := userSessions[phone]
+	return catId, exists
+}
 
 func TransitionState(phone, newState string) error {
 	err := models.UpdateUserState(phone, newState)
@@ -59,8 +80,33 @@ func ProcessMessage(ctx context.Context, phone, message string) {
 			handleStart(ctx, phone)
 		}
 	case StateBrowsing:
-		log.Printf("User %s is actively browsing. Input: %s", phone, cleanInput)
-		handleBrowsing(ctx, phone)
+		if cleanInput == "0" {
+			TransitionState(phone, StateStart)
+			handleStart(ctx, phone)
+		}
+		choice, err := strconv.Atoi(cleanInput)
+		if err != nil {
+			twilio.SendMessage(ctx, phone, "Please reply with a valid number from the menu.")
+			handleBrowsing(ctx, phone)
+			return
+		}
+		categories := GetCategories()
+		index := choice - 1
+		if index < 0 || index >= len(categories) {
+			twilio.SendMessage(ctx, phone, "Please reply with a valid number from the menu.")
+			handleBrowsing(ctx, phone)
+			return
+		}
+		selectedCategory := categories[index]
+		setSessionCategory(phone, selectedCategory.ID)
+		TransitionState(phone, StateViewingProduct)
+
+		sendProductMenu(ctx, phone, selectedCategory.ID)
+
+	case StateViewingProduct:
+		log.Printf("user is viewing product")
+		twilio.SendMessage(ctx, phone, "Jersey selected\n\n(Cart logic coming right after this)")
+
 	default:
 		log.Printf("Unhandled state: %s for user %s", currentState, phone)
 		TransitionState(phone, StateStart)
@@ -84,11 +130,58 @@ func handleStart(ctx context.Context, phone string) {
 }
 
 func handleBrowsing(ctx context.Context, phone string) {
-	message := "Here are our products:\n1. Product A\n2. Product B\n3. Product C\nPlease reply with the product number to view details."
-	err := twilio.SendMessage(ctx, phone, message)
-	if err != nil {
-		log.Printf("ERROR: failed to send browsing message to %s : %v", phone, err)
+	log.Printf("routing %s to category menu", phone)
+
+	categories := GetCategories()
+
+	if len(categories) == 0 {
+		log.Printf("No categories available to display to %s", phone)
+		twilio.SendMessage(ctx, phone, "Sorry, no categories are available at the moment.")
 		return
 	}
-	log.Printf("browsing message sent to %s", phone)
+
+	var message strings.Builder
+
+	message.WriteString("*Store Catalog*\n\nReply with a number to explore:\n\n")
+	for i, cat := range categories {
+		message.WriteString(fmt.Sprintf("%d. %s\n", i+1, cat.Name))
+
+	}
+	message.WriteString("\n 0. Back to Main Menu")
+	err := twilio.SendMessage(ctx, phone, message.String())
+	if err != nil {
+		log.Printf("ERROR: failed to send category menu to %s : %v", phone, err)
+		return
+	}
+	log.Printf("category menu sent to %s", phone)
+}
+
+func sendProductMenu(ctx context.Context, phone string, categoryID uint) {
+	log.Printf("routing %s to product menu for category %d", phone, categoryID)
+
+	products := GetProductsByCategoryID(categoryID)
+	if len(products) == 0 {
+		twilio.SendMessage(ctx, phone, "This category is currently empty! Check back later. 🚧")
+		TransitionState(phone, StateBrowsing)
+		handleBrowsing(ctx, phone)
+		return
+	}
+
+	var message strings.Builder
+
+	message.WriteString("*Products:*\n\nReply with a number to select:\n\n")
+
+	for i, prod := range products {
+		message.WriteString(fmt.Sprintf("%d. *%s*\n", i+1, prod.Name))
+		message.WriteString(fmt.Sprintf("   %s\n", prod.Description))
+		message.WriteString(fmt.Sprintf("    $%.2f\n\n", prod.Price))
+	}
+	message.WriteString("\n 0. Back to Categories")
+
+	err := twilio.SendMessage(ctx, phone, message.String())
+	if err != nil {
+		log.Printf("ERROR: failed to send product menu to %s : %v", phone, err)
+		return
+	}
+	log.Printf("product menu sent to %s for category %d", phone, categoryID)
 }
