@@ -24,6 +24,7 @@ func main() {
 	}
 	models.InitDB(Db)
 	db.Migrate(Db)
+	db.SeedDb(Db)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	api.InitServer(ctx)
