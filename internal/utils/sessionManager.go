@@ -35,3 +35,9 @@ func GetSession(phone string) (*models.UserSession, bool) {
 	session, exists := userSessions[phone]
 	return session, exists
 }
+
+func ClearSession(phone string) {
+	sessionMut.Lock()
+	defer sessionMut.Unlock()
+	delete(userSessions, phone)
+}

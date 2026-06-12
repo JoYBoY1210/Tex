@@ -106,8 +106,41 @@ func ProcessMessage(ctx context.Context, phone, message string) {
 		twilio.SendMessage(ctx, phone, fmt.Sprintf("You selected *%s*.\nPlease reply with the quantity you want to order.\n *Reply with 0 to go back*", selectedProduct.Name))
 
 	case StateAwaitingQty:
-		log.Printf("user is selecting quantity")
-		twilio.SendMessage(ctx, phone, "Ordering system is not implemented yet.")
+		if cleanInput == "0" {
+			TransitionState(phone, StateBrowsing)
+			handleBrowsing(ctx, phone)
+			return
+		}
+		session, exits := utils.GetSession(phone)
+		if !exits {
+			TransitionState(phone, StateStart)
+			handleStart(ctx, phone)
+			return
+		}
+		qty, err := strconv.Atoi(cleanInput)
+		if err != nil || qty <= 0 {
+			twilio.SendMessage(ctx, phone, "Please reply with a valid quantity (a positive number).")
+			return
+		}
+		err = models.AddToCart(phone, session.ProductId, qty)
+		if err != nil {
+			log.Printf("ERROR: failed to add product %d with quantity %d to cart for user %s : %v", session.ProductId, qty, phone, err)
+			twilio.SendMessage(ctx, phone, "Sorry, there was an error adding the product to your cart. Please try again.")
+			return
+		}
+		TransitionState(phone, StateCartDecision)
+
+		var message strings.Builder
+		message.WriteString(fmt.Sprintf("Added %d item(s) to your cart!\n\n", qty))
+		message.WriteString("*What would you like to do next?*\n")
+		message.WriteString("1. Checkout \n")
+		message.WriteString("2. Keep Shopping \n")
+		message.WriteString("3. View Cart \n")
+		message.WriteString("4. Clear Cart ")
+
+		twilio.SendMessage(ctx, phone, message.String())
+
+		
 
 	default:
 		log.Printf("Unhandled state: %s for user %s", currentState, phone)

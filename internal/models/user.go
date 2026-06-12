@@ -4,7 +4,7 @@ import "time"
 
 type User struct {
 	PhoneNumber  string     `gorm:"primaryKey" json:"phone_number"`
-	CurrentState string     `gorm:"notNull" json:"current_state"`
+	CurrentState string     `gorm:"not null" json:"current_state"`
 	Cart         []CartItem `gorm:"serializer:json" json:"cart"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
@@ -27,7 +27,7 @@ func GetUser(phone string) (*User, error) {
 	return &user, nil
 }
 
-func CreateUser(phone string,state string) (*User, error) {
+func CreateUser(phone string, state string) (*User, error) {
 	user := User{
 		PhoneNumber:  phone,
 		CurrentState: state,
@@ -38,4 +38,45 @@ func CreateUser(phone string,state string) (*User, error) {
 		return nil, result.Error
 	}
 	return &user, nil
+}
+
+func GetCart(phone string) ([]CartItem, error) {
+	var user User
+	result := DB.First(&user, "phone_number = ?", phone)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return user.Cart, nil
+}
+
+func AddToCart(phone string, productId uint, quantity int) error {
+	user, err := GetUser(phone)
+	if err != nil {
+		return err
+	}
+	found := false
+	for i, item := range user.Cart {
+		if item.ProductID == productId {
+			user.Cart[i].Quantity += quantity
+			found = true
+			break
+		}
+	}
+	if !found {
+		user.Cart = append(user.Cart, CartItem{
+			ProductID: productId,
+			Quantity:  quantity,
+		})
+
+	}
+	return DB.Save(user).Error
+}
+
+func ClearCart(phone string) error {
+	user, err := GetUser(phone)
+	if err != nil {
+		return err
+	}
+	user.Cart = []CartItem{}
+	return DB.Save(user).Error
 }
