@@ -140,7 +140,87 @@ func ProcessMessage(ctx context.Context, phone, message string) {
 
 		twilio.SendMessage(ctx, phone, message.String())
 
-		
+	case StateCartDecision:
+		switch cleanInput {
+		case "1":
+			cart, err := models.GetCart(phone)
+			if err != nil || len(cart) == 0 {
+				twilio.SendMessage(ctx, phone, "Your cart is already empty. Please add items before checking out.")
+				TransitionState(phone, StateBrowsing)
+				handleBrowsing(ctx, phone)
+				return
+			}
+
+			var total float64
+			var receipt strings.Builder
+			receipt.WriteString("*Order Receipt*\n\n")
+
+			for _, item := range cart {
+				product, exists := GetProductByID(item.ProductID)
+				if exists {
+					lineTotal := product.Price * float64(item.Quantity)
+					total += lineTotal
+					receipt.WriteString(fmt.Sprintf("%dx %s - $%.2f\n", item.Quantity, product.Name, lineTotal))
+				}
+			}
+
+			order, err := models.CreateOrder(phone, cart, total)
+			if err != nil {
+				log.Printf("ERROR: failed to create order for user %s : %v", phone, err)
+				twilio.SendMessage(ctx, phone, "Sorry, there was an error processing your order. Please try again.")
+				return
+			}
+
+			receipt.WriteString(fmt.Sprintf("\n*Total: $%.2f*\n\n", total))
+			receipt.WriteString(fmt.Sprintf("Your order has been placed! Your Order ID is #%s.\n\nType 'hi' to start a new session.", order.ID))
+			twilio.SendMessage(ctx, phone, receipt.String())
+			models.ClearCart(phone)
+			utils.ClearSession(phone)
+			TransitionState(phone, StateStart)
+
+		case "2":
+			TransitionState(phone, StateBrowsing)
+			handleBrowsing(ctx, phone)
+
+		case "3":
+			cart, err := models.GetCart(phone)
+			if err != nil || len(cart) == 0 {
+				twilio.SendMessage(ctx, phone, "Your cart is currently empty. Please add some products before viewing your cart.")
+				return
+			}
+
+			var total float64
+			var sb strings.Builder
+			sb.WriteString("🛒 *Your Current Cart*\n\n")
+
+			for _, item := range cart {
+				product, exists := GetProductByID(item.ProductID)
+				if exists {
+					lineTotal := product.Price * float64(item.Quantity)
+					total += lineTotal
+					sb.WriteString(fmt.Sprintf("%dx %s ($%.2f each)\n", item.Quantity, product.Name, product.Price))
+				}
+			}
+
+			sb.WriteString(fmt.Sprintf("\n*Total: $%.2f*\n\n", total))
+			sb.WriteString("Reply *1* to Checkout, *2* to Keep Shopping, or *4* to Clear Cart.")
+
+			twilio.SendMessage(ctx, phone, sb.String())
+
+		case "4":
+			err := models.ClearCart(phone)
+			if err != nil {
+				log.Printf("ERROR: failed to clear cart for user %s : %v", phone, err)
+				twilio.SendMessage(ctx, phone, "Sorry, there was an error clearing your cart. Please try again.")
+				return
+			}
+			twilio.SendMessage(ctx, phone, "Your cart has been cleared. You can start adding products again!")
+			TransitionState(phone, StateBrowsing)
+			handleBrowsing(ctx, phone)
+
+		default:
+			twilio.SendMessage(ctx, phone, "Please reply with a valid option from the menu.")
+		}
 
 	default:
 		log.Printf("Unhandled state: %s for user %s", currentState, phone)
