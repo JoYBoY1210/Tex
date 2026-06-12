@@ -46,8 +46,37 @@ func ProcessMessage(ctx context.Context, phone, message string) {
 			TransitionState(phone, StateBrowsing)
 			handleBrowsing(ctx, phone)
 		} else if cleanInput == "2" {
-			twilio.SendMessage(ctx, phone, "Tracking system nahi banaya lol")
+			orders, err := models.GetActiveOrders(phone)
+
+			if err != nil || len(orders) == 0 {
+				twilio.SendMessage(ctx, phone, "You don't have any active orders right now! \n\nType '1' to start shopping.")
+				return
+			}
+
+			var msg strings.Builder
+			msg.WriteString("  *Your Active Orders*\n\n")
+
+			for _, order := range orders {
+				msg.WriteString(fmt.Sprintf("   *Order #TEX-%d*\n", order.ID))
+				msg.WriteString(fmt.Sprintf("   Total: $%.2f\n", order.TotalPrice))
+				msg.WriteString(fmt.Sprintf("   Status: *%s*\n\n", order.Status))
+			}
+
+			msg.WriteString("Type '0' or 'menu' to return to the main menu.")
+			twilio.SendMessage(ctx, phone, msg.String())
+		} else if cleanInput == "3" {
+
+			var msg strings.Builder
+			msg.WriteString("  *How to use Tex Bot*\n\n")
+			msg.WriteString("• Reply *1* to browse our premium football jerseys.\n")
+			msg.WriteString("• Reply *2* to check the status of your active orders.\n")
+			msg.WriteString("• Type *0* at almost any time to go back to the previous menu.\n")
+			msg.WriteString("Ready? Type *1* to start shopping!")
+
+			twilio.SendMessage(ctx, phone, msg.String())
+
 		} else {
+
 			handleStart(ctx, phone)
 		}
 	case StateBrowsing:
@@ -172,7 +201,7 @@ func ProcessMessage(ctx context.Context, phone, message string) {
 			}
 
 			receipt.WriteString(fmt.Sprintf("\n*Total: $%.2f*\n\n", total))
-			receipt.WriteString(fmt.Sprintf("Your order has been placed! Your Order ID is #%s.\n\nType 'hi' to start a new session.", order.ID))
+			receipt.WriteString(fmt.Sprintf("Your order has been placed! Your Order ID is #%d.\n\nType 'hi' to start a new session.", order.ID))
 			twilio.SendMessage(ctx, phone, receipt.String())
 			models.ClearCart(phone)
 			utils.ClearSession(phone)
@@ -191,7 +220,7 @@ func ProcessMessage(ctx context.Context, phone, message string) {
 
 			var total float64
 			var sb strings.Builder
-			sb.WriteString("🛒 *Your Current Cart*\n\n")
+			sb.WriteString("  *Your Current Cart*\n\n")
 
 			for _, item := range cart {
 				product, exists := GetProductByID(item.ProductID)
