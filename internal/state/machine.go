@@ -6,10 +6,10 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/joyboy1210/tex/internal/models"
 	"github.com/joyboy1210/tex/internal/twilio"
+	"github.com/joyboy1210/tex/internal/utils"
 )
 
 const (
@@ -19,35 +19,6 @@ const (
 	StateAwaitingQty    = "AWAITING_QTY"
 	StateCartDecision   = "CART_DECISION"
 )
-
-var (
-	sessionMut   sync.RWMutex
-	userSessions = make(map[string]uint)
-)
-
-func setSessionCategory(phone string, categoryId uint) {
-	sessionMut.Lock()
-	defer sessionMut.Unlock()
-	userSessions[phone] = categoryId
-}
-
-func getSessionCategory(phone string) (uint, bool) {
-	sessionMut.RLock()
-	defer sessionMut.RUnlock()
-	catId, exists := userSessions[phone]
-	return catId, exists
-}
-
-func TransitionState(phone, newState string) error {
-	err := models.UpdateUserState(phone, newState)
-	if err != nil {
-		log.Printf("ERROR: database state update failed for %s : %v", phone, err)
-		return err
-	}
-	SetState(phone, newState)
-	log.Printf("state Transition: %s is now in %s", phone, newState)
-	return nil
-}
 
 func ProcessMessage(ctx context.Context, phone, message string) {
 	cleanInput := strings.TrimSpace(strings.ToLower(message))
@@ -83,6 +54,7 @@ func ProcessMessage(ctx context.Context, phone, message string) {
 		if cleanInput == "0" {
 			TransitionState(phone, StateStart)
 			handleStart(ctx, phone)
+			return
 		}
 		choice, err := strconv.Atoi(cleanInput)
 		if err != nil {
@@ -98,14 +70,44 @@ func ProcessMessage(ctx context.Context, phone, message string) {
 			return
 		}
 		selectedCategory := categories[index]
-		setSessionCategory(phone, selectedCategory.ID)
+		utils.SetSessionCategory(phone, selectedCategory.ID)
 		TransitionState(phone, StateViewingProduct)
 
 		sendProductMenu(ctx, phone, selectedCategory.ID)
 
 	case StateViewingProduct:
-		log.Printf("user is viewing product")
-		twilio.SendMessage(ctx, phone, "Jersey selected\n\n(Cart logic coming right after this)")
+		if cleanInput == "0" {
+			TransitionState(phone, StateBrowsing)
+			handleBrowsing(ctx, phone)
+			return
+		}
+		session, exists := utils.GetSession(phone)
+		if !exists {
+			TransitionState(phone, StateStart)
+			handleStart(ctx, phone)
+			return
+		}
+		choice, err := strconv.Atoi(cleanInput)
+		if err != nil {
+			twilio.SendMessage(ctx, phone, "Please reply with a valid number from the menu.")
+			sendProductMenu(ctx, phone, session.CategoryId)
+			return
+		}
+		products := GetProductsByCategoryID(session.CategoryId)
+		index := choice - 1
+		if index < 0 || index >= len(products) {
+			twilio.SendMessage(ctx, phone, "Please reply with a valid number from the menu.")
+			sendProductMenu(ctx, phone, session.CategoryId)
+			return
+		}
+		selectedProduct := products[index]
+		utils.SetSessionProduct(phone, selectedProduct.ID)
+		TransitionState(phone, StateAwaitingQty)
+		twilio.SendMessage(ctx, phone, fmt.Sprintf("You selected *%s*.\nPlease reply with the quantity you want to order.\n *Reply with 0 to go back*", selectedProduct.Name))
+
+	case StateAwaitingQty:
+		log.Printf("user is selecting quantity")
+		twilio.SendMessage(ctx, phone, "Ordering system is not implemented yet.")
 
 	default:
 		log.Printf("Unhandled state: %s for user %s", currentState, phone)

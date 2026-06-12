@@ -2,8 +2,11 @@ package state
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
+
+	"github.com/joyboy1210/tex/internal/models"
 )
 
 type entry struct {
@@ -56,4 +59,15 @@ func StartSweeper(timeout time.Duration, ctx context.Context) {
 		}
 
 	}()
+}
+
+func TransitionState(phone, newState string) error {
+	err := models.UpdateUserState(phone, newState)
+	if err != nil {
+		log.Printf("ERROR: database state update failed for %s : %v", phone, err)
+		return err
+	}
+	SetState(phone, newState)
+	log.Printf("state Transition: %s is now in %s", phone, newState)
+	return nil
 }
